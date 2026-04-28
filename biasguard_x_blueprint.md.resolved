@@ -1,0 +1,176 @@
+# BiasGuard X - Product Requirements Document & Architecture Blueprint
+
+## 1. Product Requirements Document (PRD)
+
+### Problem Statement
+As Artificial Intelligence systems take over critical decision-making processes in industries like HR, finance, healthcare, and law enforcement, the risk of undetected bias increases. Current tools lack accessible, transparent, and actionable bias testing mechanisms. There is a need for a platform that allows users and developers to cross-examine AI decisions, simulate fairness scenarios, and build trust in algorithmic outcomes.
+
+### Tagline
+“Test fairness. Challenge AI. Trust the outcome.”
+
+### Target Users
+- **General Users (Auditors, HR, Policymakers):** Need a simple interface to test inputs, view bias scores, and read plain-English fairness reports.
+- **Developers / Pro Users:** Need granular API-driven bias testing, model consensus debugging, and raw data outputs to fine-tune AI logic.
+
+### Core Features
+- **FairTwin Engine:** Automatically generates demographic "twins" (altering sensitive attributes like gender, race, age, income) for a given input profile to test for disparate treatment.
+- **Bias Detection Engine:** Analyzes differences in AI decisions across twins. Calculates a definitive Bias Score and assigns a Risk Level.
+- **AI Consensus System:** Employs a multi-model approach (Omega, Alpha, Sigma) to evaluate complex scenarios. Models debate and critique each other to reach a refined, objective conclusion.
+- **Dashboard & Analytics:** Central hub displaying aggregate fairness tests, bias trends over time, and demographic heatmaps indicating where biases are most prevalent.
+- **Scenario Playground:** A live, interactive environment where users can tweak variables and constraints in real-time, instantly recalculating AI decisions and bias scores.
+- **Report Generator:** Exports structured fairness reports detailing the complete case logs, twin data, AI consensus trails, and actionable mitigation recommendations.
+
+### User Flows
+- **Authentication Flow:** Landing Page → Email/Password or Google SSO Auth (Firebase) → Redirection to Dashboard.
+- **General Mode Flow:** Dashboard → Quick Test form (enter profile parameters) → System generates twins & runs AI analysis → Fairness Report generated (with visual gauges and heatmaps).
+- **Pro Mode Flow:** Dashboard → Scenario Playground → Multi-AI debate view → Raw JSON logs export and API configuration.
+
+### Functional Requirements
+- Secure user authentication and session persistence (Firebase Auth).
+- Storage and retrieval of past cases, AI logs, and user configurations (Firestore).
+- Generation of synthetic twins using predefined or user-configurable permutation rules.
+- Real-time interaction with the Gemini API (and optionally others) to process prompts.
+- State management across complex multi-step processes (Redux or React Context).
+
+### Non-Functional Requirements
+- **Scalability:** Stateless backend functions capable of handling simultaneous large batches of API calls without timing out.
+- **Latency:** Quick generation of AI responses. Multi-model consensus must happen asynchronously or use streaming to avoid blocked UI threads.
+- **Security:** Secure storage of user data and API keys in Firestore, robust Firestore security rules, CORS configuration, and environment-based secret management.
+- **Cost Optimization:** Implement caching for repeated queries. Use simple ML logic or mock logic for MVP to avoid excessive Gemini API billing. Use Gemini API cost-effective models (e.g., `gemini-1.5-flash`).
+
+---
+
+## 2. System Architecture
+
+**Frontend:**
+- **Framework:** React + Vite
+- **Styling:** Tailwind CSS (configured for a dark glassmorphism aesthetic).
+- **State Management:** React Context + Hooks.
+
+**Backend & Infrastructure (Serverless):**
+- **Hosting/Functions:** Firebase Hosting & Cloud Functions (Node.js).
+- **Authentication:** Firebase Auth (Google + Email/Password).
+- **Database:** Cloud Firestore (NoSQL).
+
+**AI Orchestration Layer:**
+- **Primary AI Provider:** Gemini API (Google).
+- **Consensus Logic:** Runs inside Firebase Functions (or frontend MVP logic proxy) to coordinate multiple AI prompts sequentially.
+
+### Architecture Diagram
+
+```mermaid
+graph TD
+    Client[React Frontend / Browser] -->|Auth Token| Firebase[Firebase Services]
+    Client -->|HTTPS requests| Func[Firebase Cloud Functions]
+    
+    Firebase --> Auth[Firebase Authentication]
+    Firebase --> DB[(Firestore NoSQL)]
+    
+    Func --> Engine[FairTwin & Bias Detection Logic]
+    Func --> MultiAI[AI Consensus Orchestration]
+    
+    MultiAI -->|API Call| Gemini[Google Gemini API]
+    MultiAI -->|API Call| OpenAI[OpenAI API / Optional]
+    
+    Engine --> DB
+    MultiAI --> DB
+```
+
+### Data Flow
+1. User logs in safely interacting locally with the Firebase JS Client.
+2. User submits a case. The React frontend formats the payload and sends it to the central controller (Firebase Function or Client-Side Logic for MVP).
+3. The **FairTwin Engine** generates `N` identical profiles, tweaking only the protected attributes.
+4. The profiles query the **AI Layer**. If consensus is required, a sub-loop triggers the Multi-AI negotiation process until an agreement threshold is reached.
+5. The responses return to the **Bias Detection Engine**, comparing the `original` against the `twins`.
+6. A bias score is computed. The entire payload (Original inputs, Twin inputs, AI responses, timestamps, score) is written to Firestore.
+7. The React client listens to Firestore real-time updates and dynamically reflects the completed report to the user.
+
+---
+
+## 3. Firestore Database Schema
+
+- **`users/{uid}`**: User profiles and subscription state.
+- **`cases/{caseId}`**: The central atomic unit representing a fairness test. Contains inputs, twins, results, and generated metrics.
+- **`ai_logs/{logId}`**: Detailed logs representing each individual AI API transition (useful for Pro users debugging).
+
+```json
+{
+  "users": {
+    "user_123": {
+      "uid": "user_123",
+      "name": "Jane Auditor",
+      "email": "jane@example.com",
+      "createdAt": "2026-04-26T00:00:00Z",
+      "plan": "pro"
+    }
+  },
+  "cases": {
+    "case_abc123": {
+      "caseId": "case_abc123",
+      "userId": "user_123",
+      "createdAt": "2026-04-26T00:05:00Z",
+      "biasScore": 45.2,
+      "riskLevel": "High",
+      "finalDecision": "Rejected",
+      "inputData": { "age": 45, "income": 40000, "gender": "Male", "context": "Loan Approval" },
+      "twins": [
+        { "twinId": "t1", "modifiedAttr": "gender", "value": "Female", "decision": "Approved" },
+        { "twinId": "t2", "modifiedAttr": "age", "value": 25, "decision": "Rejected" }
+      ],
+      "aiResults": {
+        "consensusReached": true,
+        "primaryVerdict": "Rejected due to income ratio"
+      }
+    }
+  },
+  "ai_logs": {
+    "log_xyz987": {
+      "caseId": "case_abc123",
+      "model": "Gemini-1.5-Pro",
+      "round": 1,
+      "response": "The applicant's income does not meet minimum thresholds. Reject.",
+      "timestamp": "2026-04-26T00:05:01Z"
+    }
+  }
+}
+```
+
+---
+
+## 4. Folder Structure (React + Vite)
+
+```
+BiasGuardXI/
+├── README.md
+├── package.json
+├── index.html
+├── vite.config.js
+├── tailwind.config.js
+├── postcss.config.js
+├── .env                  <-- Contains FIREBASE & GEMINI keys
+└── src/
+    ├── main.jsx          <-- App Entry, Auth Provider mounting
+    ├── App.jsx           <-- Routing & Layout Wrapper
+    ├── index.css         <-- Global CSS, Tailwind directive
+    ├── config/
+    │   └── firebase.js   <-- Firebase initialization
+    ├── context/
+    │   └── AuthContext.jsx <-- Firebase Auth React Context
+    ├── hooks/
+    │   └── useCases.js   <-- Firestore integration hooks
+    ├── services/
+    │   ├── ai.js         <-- Gemini API integration
+    │   ├── engine.js     <-- FairTwin and Bias Rule logic
+    │   └── consensus.js  <-- Multi-AI orchestration
+    ├── components/       <-- Global reusable components
+    │   ├── layout/       <-- Sidebar, Topbar
+    │   ├── ui/           <-- Cards, Buttons, Inputs, ChatWidget, GlassContainers
+    │   └── charts/       <-- Recharts wrappers
+    └── pages/            <-- Route views
+        ├── Login.jsx
+        ├── Dashboard.jsx
+        ├── QuickTest.jsx
+        ├── ConsensusDebate.jsx
+        ├── Report.jsx
+        └── Playground.jsx
+```
